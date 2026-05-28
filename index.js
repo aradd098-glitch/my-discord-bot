@@ -1,512 +1,668 @@
-const {
-Client,
-GatewayIntentBits,
-EmbedBuilder,
-ActionRowBuilder,
-ButtonBuilder,
-ButtonStyle,
-ChannelType,
-PermissionsBitField,
-ModalBuilder,
-TextInputBuilder,
-TextInputStyle
-} = require("discord.js");
+// ======================
+// V14 DISCORD BOT
+// ======================
 
 const sqlite3 = require("sqlite3").verbose();
+
+const {
+  Client,
+  GatewayIntentBits,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  PermissionsBitField,
+  ChannelType
+} = require("discord.js");
+
+// ======================
+// CONFIG
+// ======================
+
+const TOKEN = "PUT_TOKEN_HERE";
+
+const ADMIN_ROLE = "ADMIN_ROLE_ID";
+const APPLICATION_CHANNEL = "APPLICATION_CHANNEL_ID";
+const LOG_CHANNEL = "LOG_CHANNEL_ID";
+const TICKET_CATEGORY = "TICKET_CATEGORY_ID";
+
+// ======================
+// CLIENT
+// ======================
+
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers
+  ]
+});
+
+// ======================
+// DATABASE
+// ======================
+
 const db = new sqlite3.Database("./bot.db");
 
-// =====================
-// CONFIG
-// =====================
-const TOKEN = process.env.TOKEN;
-const ADMIN_ROLE = "ADMIN_ROLE_ID";
-const EVENT_ROLE = "EVENT_ROLE_ID";
-
-// =====================
-// DATABASE
-// =====================
-db.run(`CREATE TABLE IF NOT EXISTS event_points (user_id TEXT PRIMARY KEY, points INTEGER DEFAULT 0)`);
-db.run(`CREATE TABLE IF NOT EXISTS admin_points (user_id TEXT PRIMARY KEY, points INTEGER DEFAULT 0)`);
-db.run(`CREATE TABLE IF NOT EXISTS xp (user_id TEXT PRIMARY KEY, xp INTEGER DEFAULT 0, level INTEGER DEFAULT 0)`);
-db.run(`CREATE TABLE IF NOT EXISTS applications (user_id TEXT PRIMARY KEY, type TEXT)`);
-// =====================
-// CLIENT
-// =====================
-const client = new Client({
-intents: [
-GatewayIntentBits.Guilds,
-GatewayIntentBits.GuildMessages,
-GatewayIntentBits.MessageContent,
-GatewayIntentBits.GuildMembers
-]
-});
-
-// =====================
-// SYSTEM FUNCTIONS
-// =====================
-function addEvent(id,a){
-db.run("INSERT OR IGNORE INTO event_points VALUES (?,0)",[id]);
-db.run("UPDATE event_points SET points = points + ? WHERE user_id=?",[a,id]);
-}
-
-function removeEvent(id,a){
-db.run("INSERT OR IGNORE INTO event_points VALUES (?,0)",[id]);
-db.run("UPDATE event_points SET points = MAX(points - ?,0) WHERE user_id=?",[a,id]);
-}
-
-function addAdmin(id,a){
-db.run("INSERT OR IGNORE INTO admin_points VALUES (?,0)",[id]);
-db.run("UPDATE admin_points SET points = points + ? WHERE user_id=?",[a,id]);
-}
-
-function removeAdmin(id,a){
-db.run("INSERT OR IGNORE INTO admin_points VALUES (?,0)",[id]);
-db.run("UPDATE admin_points SET points = MAX(points - ?,0) WHERE user_id=?",[a,id]);
-}
-
-// =====================
-// PANEL
-// =====================
-function panel(){
-return new EmbedBuilder()
-.setTitle("🎛️ لوحة التحكم V7")
-.setColor(0x2B2D31)
-.setDescription(`
-🛡️ إدارة
-🎪 إيفنت
-🏆 توب الإدارة
-🏆 توب الإيفنت
-
-اضغط الأزرار للتحكم
+db.run(`
+CREATE TABLE IF NOT EXISTS applications (
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+user_id TEXT,
+type TEXT,
+status TEXT,
+reason TEXT
+)
 `);
-}
 
-function panelRow(){
-return new ActionRowBuilder().addComponents(
-new ButtonBuilder().setCustomId("admin").setLabel("🛡️ إدارة").setStyle(ButtonStyle.Danger),
-new ButtonBuilder().setCustomId("event").setLabel("🎪 إيفنت").setStyle(ButtonStyle.Success),
-new ButtonBuilder().setCustomId("top_admin").setLabel("🏆 توب إدارة").setStyle(ButtonStyle.Primary),
-new ButtonBuilder().setCustomId("top_event").setLabel("🏆 توب إيفنت").setStyle(ButtonStyle.Primary)
-);
-}
-
-// =====================
-// 🎯 APPLY SYSTEM
-// =====================
-function applyPanel() {
-return new EmbedBuilder()
-.setTitle("نظام التقديم")
-.setColor(0x2B2D31)
-.setDescription(`
-Administration:
-- Name
-- Age
-- Experience
-- Goal
-- Reference
-
-Event:
-- Name
-- Age
-- Experience
-- Design rate
-- Reference
-
-Press button to apply
+db.run(`
+CREATE TABLE IF NOT EXISTS admin_points (
+user_id TEXT PRIMARY KEY,
+points INTEGER DEFAULT 0
+)
 `);
-}
 
-function applyRow() {
-return new ActionRowBuilder().addComponents(
-new ButtonBuilder()
-.setCustomId("apply_admin")
-.setLabel("تقديم إدارة")
-.setStyle(ButtonStyle.Danger),
+// ======================
+// MEMORY
+// ======================
 
-new ButtonBuilder()
-.setCustomId("apply_event")
-.setLabel("تقديم إيفنت")
-.setStyle(ButtonStyle.Success)
-);
-}
-
-// =====================
-// MESSAGE COMMANDS
-// =====================
-client.on("messageCreate", async (msg)=>{
-
-if(msg.author.bot) return;
-
-// لوحة
-if(msg.content === "!لوحة"){
-return msg.channel.send({embeds:[panel()],components:[panelRow()]});
-}
-
-if (msg.content === "!تقديمات") {
-
-  if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator))
-    return;
-
-  const embed = new EmbedBuilder()
-    .setTitle("نظام التقديم")
-    .setDescription(`
-اختر نوع التقديم:
-
-- إدارة السيرفر
-- فريق الإيفنت
-
-اضغط زر التقديم واملأ البيانات
-`)
-    .setColor(0x2B2D31);
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("apply_admin")
-      .setLabel("تقديم إدارة")
-      .setStyle(ButtonStyle.Danger),
-
-    new ButtonBuilder()
-      .setCustomId("apply_event")
-      .setLabel("تقديم إيفنت")
-      .setStyle(ButtonStyle.Success)
-  );
-
-  msg.channel.send({ embeds: [embed], components: [row] });
-}
-
-// =====================
-// GIVEAWAY STORAGE
-// =====================
+const activeApps = new Set();
 const giveaways = {};
 
-// =====================
-// BUTTONS (ALL SYSTEMS)
-// =====================
-client.on("interactionCreate", async (i)=>{
+// ======================
+// READY
+// ======================
 
-if(i.isButton()){
-if (i.customId === "apply_admin") {
-  // نموذج تقديم الإدارة
-}
-  if (i.customId === "apply_admin") {
-
-  const modal = new ModalBuilder()
-    .setCustomId("admin_apply")
-    .setTitle("تقديم إدارة");
-
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId("name")
-        .setLabel("اسمك")
-        .setStyle(TextInputStyle.Short)
-    ),
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId("age")
-        .setLabel("عمرك")
-        .setStyle(TextInputStyle.Short)
-    ),
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId("exp")
-        .setLabel("خبراتك بالتفصيل")
-        .setStyle(TextInputStyle.Paragraph)
-    ),
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId("goal")
-        .setLabel("وش طموحك في السيرفر")
-        .setStyle(TextInputStyle.Paragraph)
-    )
-  );
-
-  return i.showModal(modal);
-  }
-  if (i.customId === "apply_event") {
-  // نموذج تقديم الإيفنت
-  }
-  if (i.customId === "apply_event") {
-
-  const modal = new ModalBuilder()
-    .setCustomId("event_apply")
-    .setTitle("تقديم إيفنت");
-
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId("name")
-        .setLabel("اسمك")
-        .setStyle(TextInputStyle.Short)
-    ),
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId("age")
-        .setLabel("عمرك")
-        .setStyle(TextInputStyle.Short)
-    ),
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId("exp")
-        .setLabel("خبراتك بالتفصيل")
-        .setStyle(TextInputStyle.Paragraph)
-    ),
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId("rate")
-        .setLabel("تقييم تصاميمك من 10")
-        .setStyle(TextInputStyle.Short)
-    )
-  );
-
-  return i.showModal(modal);
-  }
-// ================= TICKET =================
-if(["t1","t2","t3"].includes(i.customId)){
-const ch = await i.guild.channels.create({
-name:`ticket-${i.user.username}`,
-type:ChannelType.GuildText,
-permissionOverwrites:[
-{id:i.guild.id,deny:[PermissionsBitField.Flags.ViewChannel]},
-{id:i.user.id,allow:[PermissionsBitField.Flags.ViewChannel]},
-{id:ADMIN_ROLE,allow:[PermissionsBitField.Flags.ViewChannel]}
-]
+client.once("ready", () => {
+  console.log(`Logged in as ${client.user.tag}`);
 });
 
-ch.send(`<@${i.user.id}> <@&${ADMIN_ROLE}>`);
-return i.reply({content:"تم فتح التكت",ephemeral:true});
+// ======================
+// EMBEDS
+// ======================
+
+function mainPanel() {
+  return new EmbedBuilder()
+    .setTitle("CONTROL PANEL V14")
+    .setDescription("Main Control Panel")
+    .setColor(0x2B2D31);
 }
 
-// ================= GIVEAWAY =================
-if(i.customId === "join"){
-if(!giveaways[i.message.id]) giveaways[i.message.id]=[];
-if(giveaways[i.message.id].includes(i.user.id))
-return i.reply({content:"دخلت مسبقاً",ephemeral:true});
+function mainButtons() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("panel_apply")
+      .setLabel("Applications")
+      .setStyle(ButtonStyle.Primary),
 
-giveaways[i.message.id].push(i.user.id);
-return i.reply({content:"تم دخولك 🎉",ephemeral:true});
+    new ButtonBuilder()
+      .setCustomId("panel_ticket")
+      .setLabel("Tickets")
+      .setStyle(ButtonStyle.Secondary),
+
+    new ButtonBuilder()
+      .setCustomId("panel_giveaway")
+      .setLabel("Giveaway")
+      .setStyle(ButtonStyle.Success),
+
+    new ButtonBuilder()
+      .setCustomId("panel_admin")
+      .setLabel("Admin")
+      .setStyle(ButtonStyle.Danger)
+  );
+}
+
+// ======================
+// MESSAGE COMMANDS
+// ======================
+
+client.on("messageCreate", async (msg) => {
+
+  if (msg.author.bot) return;
+
+  // ======================
+  // PANEL
+  // ======================
+
+  if (msg.content === "!panel") {
+    msg.channel.send({
+      embeds: [mainPanel()],
+      components: [mainButtons()]
+    });
+  }
+
+  // ======================
+  // GIVEAWAY
+  // ======================
+
+  if (msg.content.startsWith("!giveaway")) {
+
+    if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return;
+
+    const args = msg.content.split(" ");
+
+    const prize = args.slice(1).join(" ");
+
+    if (!prize) return msg.reply("حدد الجائزة");
+
+    const embed = new EmbedBuilder()
+      .setTitle("GIVEAWAY")
+      .setDescription(`Prize: ${prize}`)
+      .setColor(0x5865F2);
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("join_giveaway")
+        .setLabel("Join")
+        .setStyle(ButtonStyle.Success),
+
+      new ButtonBuilder()
+        .setCustomId("end_giveaway")
+        .setLabel("End")
+        .setStyle(ButtonStyle.Danger)
+    );
+
+    const giveawayMsg = await msg.channel.send({
+      embeds: [embed],
+      components: [row]
+    });
+
+    giveaways[giveawayMsg.id] = [];
+  }
+
+  // ======================
+  // ADMIN POINTS
+  // ======================
+
+  if (msg.content.startsWith("!addpoints")) {
+
+    if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return;
+
+    const member = msg.mentions.members.first();
+
+    const amount = parseInt(msg.content.split(" ")[2]);
+
+    if (!member || isNaN(amount)) return;
+
+    db.run(`
+    INSERT INTO admin_points(user_id, points)
+    VALUES(?, ?)
+    ON CONFLICT(user_id)
+    DO UPDATE SET points = points + ?
+    `, [member.id, amount, amount]);
+
+    msg.reply(`Added ${amount} points to ${member.user.tag}`);
+  }
+
+  if (msg.content.startsWith("!points")) {
+
+    const member = msg.mentions.members.first() || msg.member;
+
+    db.get(`
+    SELECT * FROM admin_points WHERE user_id = ?
+    `, [member.id], (err, row) => {
+
+      let points = 0;
+
+      if (row) points = row.points;
+
+      msg.reply(`${member.user.tag} has ${points} points`);
+    });
+  }
+
+});
+
+// ======================
+// INTERACTIONS
+// ======================
+
 client.on("interactionCreate", async (i) => {
 
-  // ================= BUTTONS =================
+  // ======================
+  // BUTTONS
+  // ======================
+
   if (i.isButton()) {
 
-    // ========= TICKET =========
-    if (["t1","t2","t3"].includes(i.customId)) {
+    // ======================
+    // APPLICATION PANEL
+    // ======================
 
-      const ch = await i.guild.channels.create({
+    if (i.customId === "panel_apply") {
+
+      const row = new ActionRowBuilder().addComponents(
+
+        new ButtonBuilder()
+          .setCustomId("apply_admin")
+          .setLabel("Admin Apply")
+          .setStyle(ButtonStyle.Danger),
+
+        new ButtonBuilder()
+          .setCustomId("apply_event")
+          .setLabel("Event Apply")
+          .setStyle(ButtonStyle.Success)
+      );
+
+      return i.reply({
+        content: "Choose Application",
+        components: [row],
+        ephemeral: true
+      });
+    }
+
+    // ======================
+    // TICKET PANEL
+    // ======================
+
+    if (i.customId === "panel_ticket") {
+
+      const channel = await i.guild.channels.create({
         name: `ticket-${i.user.username}`,
         type: ChannelType.GuildText,
+        parent: TICKET_CATEGORY,
         permissionOverwrites: [
-          { id: i.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-          { id: i.user.id, allow: [PermissionsBitField.Flags.ViewChannel] },
-          { id: ADMIN_ROLE, allow: [PermissionsBitField.Flags.ViewChannel] }
+          {
+            id: i.guild.id,
+            deny: ["ViewChannel"]
+          },
+          {
+            id: i.user.id,
+            allow: ["ViewChannel", "SendMessages"]
+          }
         ]
       });
 
-      ch.send(`<@${i.user.id}> <@&${ADMIN_ROLE}>`);
-      return i.reply({ content: "تم فتح التكت", ephemeral: true });
+      const embed = new EmbedBuilder()
+        .setTitle("Ticket Opened")
+        .setDescription("Support will assist you soon.")
+        .setColor(0x2B2D31);
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("close_ticket")
+          .setLabel("Close")
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      await channel.send({
+        content: `${i.user}`,
+        embeds: [embed],
+        components: [row]
+      });
+
+      return i.reply({
+        content: `Ticket created: ${channel}`,
+        ephemeral: true
+      });
     }
 
-    // ========= GIVEAWAY =========
-    if (i.customId === "join") {
+    // ======================
+    // CLOSE TICKET
+    // ======================
+
+    if (i.customId === "close_ticket") {
+
+      await i.reply({
+        content: "Closing ticket...",
+        ephemeral: true
+      });
+
+      setTimeout(() => {
+        i.channel.delete().catch(() => {});
+      }, 3000);
+    }
+
+    // ======================
+    // GIVEAWAY JOIN
+    // ======================
+
+    if (i.customId === "join_giveaway") {
+
       if (!giveaways[i.message.id]) giveaways[i.message.id] = [];
 
-      if (giveaways[i.message.id].includes(i.user.id))
-        return i.reply({ content: "دخلت مسبقاً", ephemeral: true });
+      if (giveaways[i.message.id].includes(i.user.id)) {
+        return i.reply({
+          content: "Already joined",
+          ephemeral: true
+        });
+      }
 
       giveaways[i.message.id].push(i.user.id);
-      return i.reply({ content: "تم دخولك 🎉", ephemeral: true });
+
+      return i.reply({
+        content: "Joined giveaway",
+        ephemeral: true
+      });
     }
 
-    // ========= ACCEPT / REJECT ADMIN =========
-    if (i.customId.startsWith("accept_admin_")) {
-      return i.reply({ content: "تم قبول التقديم الإداري", ephemeral: true });
+    // ======================
+    // GIVEAWAY END
+    // ======================
+
+    if (i.customId === "end_giveaway") {
+
+      const users = giveaways[i.message.id];
+
+      if (!users || users.length === 0) {
+        return i.reply({
+          content: "No participants",
+          ephemeral: true
+        });
+      }
+
+      const winner =
+        users[Math.floor(Math.random() * users.length)];
+
+      i.channel.send(`Winner: <@${winner}>`);
+
+      const logChannel = await client.channels.fetch(LOG_CHANNEL);
+
+      if (logChannel) {
+        logChannel.send(`Giveaway Winner: <@${winner}>`);
+      }
+
+      return i.reply({
+        content: "Giveaway ended",
+        ephemeral: true
+      });
     }
 
-    if (i.customId.startsWith("reject_admin_")) {
-      return i.reply({ content: "تم رفض التقديم الإداري", ephemeral: true });
-    }
+    // ======================
+    // APPLY ADMIN
+    // ======================
 
-    // ========= ACCEPT / REJECT EVENT =========
-    if (i.customId.startsWith("accept_event_")) {
-      return i.reply({ content: "تم قبول تقديم الإيفنت", ephemeral: true });
-    }
-
-    if (i.customId.startsWith("reject_event_")) {
-      return i.reply({ content: "تم رفض تقديم الإيفنت", ephemeral: true });
-    }
-
-    // ========= PANEL =========
-    if (i.customId === "admin") {
-
-      const modal = new ModalBuilder()
-        .setCustomId("admin_modal")
-        .setTitle("إدارة");
-
-      modal.addComponents(
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId("user").setLabel("ID").setStyle(TextInputStyle.Short)
-        ),
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId("amount").setLabel("Amount").setStyle(TextInputStyle.Short)
-        )
-      );
-
-      return i.showModal(modal);
-    }
-
-    if (i.customId === "event") {
-
-      const modal = new ModalBuilder()
-        .setCustomId("event_modal")
-        .setTitle("إيفنت");
-
-      modal.addComponents(
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId("user").setLabel("ID").setStyle(TextInputStyle.Short)
-        ),
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId("amount").setLabel("Amount").setStyle(TextInputStyle.Short)
-        )
-      );
-
-      return i.showModal(modal);
-    }
-
-    // ========= OPEN APPLICATION FORMS =========
     if (i.customId === "apply_admin") {
 
+      if (activeApps.has(i.user.id)) {
+        return i.reply({
+          content: "عندك تقديم مفتوح",
+          ephemeral: true
+        });
+      }
+
+      activeApps.add(i.user.id);
+
       const modal = new ModalBuilder()
-        .setCustomId("admin_apply")
-        .setTitle("تقديم إدارة");
+        .setCustomId("admin_application")
+        .setTitle("Admin Application");
 
       modal.addComponents(
+
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId("name").setLabel("اسمك").setStyle(TextInputStyle.Short)
+          new TextInputBuilder()
+            .setCustomId("name")
+            .setLabel("Name")
+            .setStyle(TextInputStyle.Short)
         ),
+
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId("age").setLabel("عمرك").setStyle(TextInputStyle.Short)
+          new TextInputBuilder()
+            .setCustomId("age")
+            .setLabel("Age")
+            .setStyle(TextInputStyle.Short)
         ),
+
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId("exp").setLabel("خبراتك").setStyle(TextInputStyle.Paragraph)
-        ),
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId("goal").setLabel("طموحك").setStyle(TextInputStyle.Paragraph)
+          new TextInputBuilder()
+            .setCustomId("experience")
+            .setLabel("Experience")
+            .setStyle(TextInputStyle.Paragraph)
         )
       );
 
       return i.showModal(modal);
     }
+
+    // ======================
+    // APPLY EVENT
+    // ======================
 
     if (i.customId === "apply_event") {
 
+      if (activeApps.has(i.user.id)) {
+        return i.reply({
+          content: "عندك تقديم مفتوح",
+          ephemeral: true
+        });
+      }
+
+      activeApps.add(i.user.id);
+
       const modal = new ModalBuilder()
-        .setCustomId("event_apply_form")
-        .setTitle("تقديم إيفنت");
+        .setCustomId("event_application")
+        .setTitle("Event Application");
 
       modal.addComponents(
+
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId("name").setLabel("اسمك").setStyle(TextInputStyle.Short)
+          new TextInputBuilder()
+            .setCustomId("name")
+            .setLabel("Name")
+            .setStyle(TextInputStyle.Short)
         ),
+
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId("age").setLabel("عمرك").setStyle(TextInputStyle.Short)
+          new TextInputBuilder()
+            .setCustomId("age")
+            .setLabel("Age")
+            .setStyle(TextInputStyle.Short)
         ),
+
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId("exp").setLabel("خبراتك").setStyle(TextInputStyle.Paragraph)
-        ),
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId("design").setLabel("تقييمك /10").setStyle(TextInputStyle.Short)
+          new TextInputBuilder()
+            .setCustomId("experience")
+            .setLabel("Experience")
+            .setStyle(TextInputStyle.Paragraph)
         )
       );
 
       return i.showModal(modal);
     }
 
-    // ========= TOP =========
-    if (i.customId === "top_admin") {
-      db.all("SELECT * FROM admin_points ORDER BY points DESC LIMIT 10", [], (e, r) => {
-        i.reply(r.map((x, i) => `${i+1}. <@${x.user_id}> - ${x.points}`).join("\n"));
-      });
+    // ======================
+    // ACCEPT / REJECT
+    // ======================
+
+    if (
+      i.customId.startsWith("accept_") ||
+      i.customId.startsWith("reject_")
+    ) {
+
+      if (
+        !i.member.permissions.has(
+          PermissionsBitField.Flags.Administrator
+        )
+      ) {
+        return i.reply({
+          content: "No Permission",
+          ephemeral: true
+        });
+      }
+
+      const modal = new ModalBuilder()
+        .setCustomId(`reason_${i.customId}`)
+        .setTitle("Reason");
+
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId("reason")
+            .setLabel("Reason")
+            .setStyle(TextInputStyle.Paragraph)
+        )
+      );
+
+      return i.showModal(modal);
     }
 
-    if (i.customId === "top_event") {
-      db.all("SELECT * FROM event_points ORDER BY points DESC LIMIT 10", [], (e, r) => {
-        i.reply(r.map((x, i) => `${i+1}. <@${x.user_id}> - ${x.points}`).join("\n"));
-      });
-    }
   }
 
-  // ================= MODALS =================
+  // ======================
+  // MODALS
+  // ======================
+
   if (i.isModalSubmit()) {
 
-    const APPLY_CHANNEL_ID = "PUT_CHANNEL_ID_HERE";
+    // ======================
+    // APPLICATION SUBMIT
+    // ======================
 
-    // ========= ADMIN APPLY =========
-    if (i.customId === "admin_apply") {
+    if (
+      i.customId === "admin_application" ||
+      i.customId === "event_application"
+    ) {
+
+      const type =
+        i.customId === "admin_application"
+          ? "ADMIN"
+          : "EVENT";
 
       const embed = new EmbedBuilder()
-        .setTitle("New Admin Application")
+        .setTitle(`${type} APPLICATION`)
         .setColor(0x2B2D31)
         .addFields(
-          { name: "Name", value: i.fields.getTextInputValue("name") },
-          { name: "Age", value: i.fields.getTextInputValue("age") },
-          { name: "Experience", value: i.fields.getTextInputValue("exp") },
-          { name: "Goal", value: i.fields.getTextInputValue("goal") },
-          { name: "Applicant", value: `<@${i.user.id}>` }
+          {
+            name: "Name",
+            value: i.fields.getTextInputValue("name")
+          },
+          {
+            name: "Age",
+            value: i.fields.getTextInputValue("age")
+          },
+          {
+            name: "Experience",
+            value: i.fields.getTextInputValue("experience")
+          },
+          {
+            name: "User",
+            value: `<@${i.user.id}>`
+          }
         );
 
+      db.run(`
+      INSERT INTO applications(user_id, type, status, reason)
+      VALUES(?, ?, ?, ?)
+      `, [
+        i.user.id,
+        type,
+        "PENDING",
+        ""
+      ]);
+
       const row = new ActionRowBuilder().addComponents(
+
         new ButtonBuilder()
-          .setCustomId(`accept_admin_${i.user.id}`)
+          .setCustomId(`accept_${type}_${i.user.id}`)
           .setLabel("Accept")
           .setStyle(ButtonStyle.Success),
 
         new ButtonBuilder()
-          .setCustomId(`reject_admin_${i.user.id}`)
+          .setCustomId(`reject_${type}_${i.user.id}`)
           .setLabel("Reject")
           .setStyle(ButtonStyle.Danger)
       );
 
-      const ch = await client.channels.fetch(APPLY_CHANNEL_ID);
-      await ch.send({ embeds: [embed], components: [row] });
+      const appChannel =
+        await client.channels.fetch(APPLICATION_CHANNEL);
 
-      return i.reply({ content: "تم إرسال التقديم", ephemeral: true });
-    }
+      if (appChannel) {
+        appChannel.send({
+          embeds: [embed],
+          components: [row]
+        });
+      }
 
-    // ========= EVENT APPLY =========
-    if (i.customId === "event_apply_form") {
+      const logChannel =
+        await client.channels.fetch(LOG_CHANNEL);
 
-      const embed = new EmbedBuilder()
-        .setTitle("New Event Application")
-        .setColor(0x57F287)
-        .addFields(
-          { name: "Name", value: i.fields.getTextInputValue("name") },
-          { name: "Age", value: i.fields.getTextInputValue("age") },
-          { name: "Experience", value: i.fields.getTextInputValue("exp") },
-          { name: "Design", value: i.fields.getTextInputValue("design") },
-          { name: "Applicant", value: `<@${i.user.id}>` }
+      if (logChannel) {
+        logChannel.send(
+          `New ${type} application from ${i.user.tag}`
         );
+      }
 
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`accept_event_${i.user.id}`)
-          .setLabel("Accept")
-          .setStyle(ButtonStyle.Success),
+      activeApps.delete(i.user.id);
 
-        new ButtonBuilder()
-          .setCustomId(`reject_event_${i.user.id}`)
-          .setLabel("Reject")
-          .setStyle(ButtonStyle.Danger)
-      );
-
-      const ch = await client.channels.fetch(APPLY_CHANNEL_ID);
-      await ch.send({ embeds: [embed], components: [row] });
-
-      return i.reply({ content: "تم إرسال التقديم", ephemeral: true });
+      return i.reply({
+        content: "Application Sent",
+        ephemeral: true
+      });
     }
+
+    // ======================
+    // ACCEPT / REJECT REASON
+    // ======================
+
+    if (i.customId.startsWith("reason_")) {
+
+      const data = i.customId.replace("reason_", "");
+
+      const parts = data.split("_");
+
+      const action = parts[0];
+      const type = parts[1];
+      const userId = parts[2];
+
+      const reason =
+        i.fields.getTextInputValue("reason");
+
+      const status =
+        action === "accept"
+          ? "ACCEPTED"
+          : "REJECTED";
+
+      db.run(`
+      UPDATE applications
+      SET status = ?, reason = ?
+      WHERE user_id = ?
+      `, [
+        status,
+        reason,
+        userId
+      ]);
+
+      const user = await client.users.fetch(userId);
+
+      if (user) {
+
+        const embed = new EmbedBuilder()
+          .setTitle(`APPLICATION ${status}`)
+          .setDescription(reason)
+          .setColor(
+            status === "ACCEPTED"
+              ? 0x57F287
+              : 0xED4245
+          );
+
+        user.send({
+          embeds: [embed]
+        }).catch(() => {});
+      }
+
+      const logChannel =
+        await client.channels.fetch(LOG_CHANNEL);
+
+      if (logChannel) {
+        logChannel.send(
+          `${status} | ${userId} | ${reason}`
+        );
+      }
+
+      return i.reply({
+        content: `${status} Successfully`,
+        ephemeral: true
+      });
+    }
+
   }
+
 });
-// =====================
+
+// ======================
 // LOGIN
-// =====================
+// ======================
+
 client.login(TOKEN);
